@@ -1,0 +1,160 @@
+services:
+  # 1. WordPress 数据库
+  wordpress-db:
+    image: mysql:8.0
+    container_name: ai-article-wordpress-db
+    environment:
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress123
+      MYSQL_ROOT_PASSWORD: root123
+    volumes:
+      - wordpress_db_data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - ai-article-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-proot123",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # 2. WordPress
+  wordpress:
+    image: wordpress:latest
+    container_name: ai-article-wordpress
+    ports:
+      - "8082:80"
+    environment:
+      WORDPRESS_DB_HOST: wordpress-db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress123
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wordpress_data:/var/www/html
+    depends_on:
+      wordpress-db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - ai-article-network
+
+  # 3. WordPress 初始化（配置 WordPress 并写入后端数据库）
+  wordpress-init:
+    image: wordpress:cli
+    container_name: ai-article-wordpress-init
+    user: "0:0"
+    depends_on:
+      - wordpress
+    environment:
+      WORDPRESS_DB_HOST: wordpress-db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress123
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wordpress_data:/var/www/html
+      - ./backend/data:/backend-data
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "=========================================="
+        echo "  WordPress 自动初始化"
+        echo "=========================================="
+
+        echo "[1/5] 等待 WordPress 文件..."
+        sleep 20
+        while [ ! -f /var/www/html/wp-config.php ]; do
+            sleep 3
+        done
+        echo "✓ WordPress 文件就绪"
+
+        echo "[2/5] 安装 WordPress..."
+        # 直接尝试安装，如果已安装会提示
+        wp core install \
+            --url="http://localhost:8082" \
+            --title="AI Article Test Site" \
+            --admin_user="admin" \
+            --admin_password="admin123" \
+            --admin_email="admin@example.com" \
+            --skip-email \
+            --allow-root 2>&1 || echo "WordPress 可能已安装"
+        echo "✓ WordPress 安装完成"
+
+        echo "[3/5] 配置应用密码..."
+        wp config set WP_ENVIRONMENT_TYPE local --type=constant --allow-root 2>/dev/null || true
+        wp user application-password delete admin --all --allow-root 2>/dev/null || true
+        APP_PASSWORD=$$(wp user application-password create admin "ai-article-api" --porcelain --allow-root 2>/dev/null)
+
+        if [ -z "$$APP_PASSWORD" ]; then
+            echo "✗ 应用密码创建失败"
+            exit 1
+        fi
+        echo "✓ 应用密码: $$APP_PASSWORD"
+
+        echo "[4/5] 安装 SQLite..."
+        apk add --no-cache sqlite > /dev/null 2>&1 || true
+
+        echo "[5/5] 写入后端配置..."
+        mkdir -p /backend-data
+        sqlite3 /backend-data/app.db "CREATE TABLE IF NOT EXISTS cms_config (id INTEGER PRIMARY KEY, platform TEXT, api_url TEXT, username TEXT, password TEXT, config JSON, is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME);"
+        sqlite3 /backend-data/app.db "DELETE FROM cms_config WHERE platform='wordpress';"
+        sqlite3 /backend-data/app.db "INSERT INTO cms_config (platform, api_url, username, password, is_active) VALUES ('wordpress', 'http://localhost:8082', 'admin', '$$APP_PASSWORD', 1);"
+        echo "✓ CMS 配置已写入数据库"
+
+        echo ""
+        echo "=========================================="
+        echo "  初始化完成！"
+        echo "=========================================="
+        echo "WordPress: http://localhost:8082/wp-admin"
+        echo "用户名: admin / 密码: admin123"
+        echo "应用密码: $$APP_PASSWORD"
+    networks:
+      - ai-article-network
+    restart: "no"
+
+  # 4. 后端 API 服务（等待 WordPress 初始化完成）
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai-article-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/data:/app/data
+      - ./backend/logs:/app/logs
+    environment:
+      - DATABASE_URL=sqlite:///./data/app.db
+      - APP_HOST=0.0.0.0
+      - APP_PORT=8000
+      - DOCKER_ENV=true
+    extra_hosts:
+      - "localhost:host-gateway"
+    depends_on:
+      wordpress-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks:
+      - ai-article-network
+
+  # 注意：桌面 GUI 应用需要在本地运行，不在 Docker 中
+  # 请使用以下命令启动 GUI：
+  # cd backend && python -m gui.main_window
+
+networks:
+  ai-article-network:
+    driver: bridge
+
+volumes:
+  wordpress_data:
+  wordpress_db_data:

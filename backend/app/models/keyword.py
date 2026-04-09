@@ -1,0 +1,18 @@
+"""
+关键词模型
+"""
+from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy.sql import func
+from app.core.database import Base
+
+
+class Keyword(Base):
+    """关键词表"""
+    __tablename__ = "keyword"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    keyword = Column(String(100), nullable=False, unique=True, comment="关键词")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    
+    def __repr__(self):
+        return f"<Keyword(id={self.id}, keyword={self.keyword})>"
