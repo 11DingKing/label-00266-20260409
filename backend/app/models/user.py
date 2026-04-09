@@ -3,7 +3,7 @@
 """
 from sqlalchemy import Column, Integer, String, DateTime, Boolean
 from sqlalchemy.sql import func
-from app.core.database import Base
+from app.models.base import Base
 
 
 class User(Base):

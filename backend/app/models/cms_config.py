@@ -3,7 +3,7 @@ CMS配置模型
 """
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, JSON
 from sqlalchemy.sql import func
-from app.core.database import Base
+from app.models.base import Base
 
 
 class CMSConfig(Base):

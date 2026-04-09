@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     # 数据库配置
     DATABASE_URL: str = "sqlite:///./data/app.db"
     
+    # GUI数据库连接池配置
+    GUI_POOL_SIZE: int = 3
+    GUI_MAX_OVERFLOW: int = 2
+    
+    # API数据库连接池配置
+    API_POOL_SIZE: int = 10
+    API_MAX_OVERFLOW: int = 5
+    
     # 应用配置
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
@@ -24,6 +32,7 @@ class Settings(BaseSettings):
     # 日志配置
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/app.log"
+    LOG_BACKUP_DAYS: int = 7
     
     class Config:
         env_file = ".env"

@@ -3,22 +3,29 @@
 """
 import os
 import logging
-from logging.handlers import RotatingFileHandler
+from logging.handlers import TimedRotatingFileHandler
 from app.core.config import settings
 
 
-def setup_logging():
-    """配置日志系统"""
-    # 确保日志目录存在
+def setup_logging(mode: str = "api"):
+    """
+    配置日志系统
+    
+    Args:
+        mode: 运行模式，"api" 或 "gui"
+    """
     log_dir = os.path.dirname(settings.LOG_FILE)
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
     
-    # 配置根日志
+    log_file = os.path.join(log_dir, f"{mode}.log")
+    
     logger = logging.getLogger()
     logger.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
     
-    # 控制台处理器
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+    
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_formatter = logging.Formatter(
@@ -26,11 +33,12 @@ def setup_logging():
     )
     console_handler.setFormatter(console_formatter)
     
-    # 文件处理器
-    file_handler = RotatingFileHandler(
-        settings.LOG_FILE,
-        maxBytes=10 * 1024 * 1024,  # 10MB
-        backupCount=5
+    file_handler = TimedRotatingFileHandler(
+        log_file,
+        when="midnight",
+        interval=1,
+        backupCount=settings.LOG_BACKUP_DAYS,
+        encoding="utf-8"
     )
     file_handler.setLevel(logging.DEBUG)
     file_formatter = logging.Formatter(
@@ -40,6 +48,8 @@ def setup_logging():
     
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
+    
+    logging.info(f"日志系统已初始化，模式: {mode}, 日志文件: {log_file}")
     
     return logger
 
